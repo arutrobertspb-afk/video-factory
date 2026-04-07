@@ -72,6 +72,46 @@ async def describe_frames_batch(frame_paths: list, batch_size: int = 12) -> list
     return [result[:100]] * len(frame_paths)
 
 
+async def autonomous_pipeline(instruction: str) -> str:
+    """AI executes a full instruction: create board, download videos, parse, tag, remix, etc.
+
+    Uses Claude CLI with tools (Bash) to call our own HTTP API.
+    """
+    prompt = f"""Ты — автономный AI Director для Video Factory. У тебя есть локальный API http://127.0.0.1:8765/api и ты управляешь всем процессом.
+
+<instruction>
+{instruction}
+</instruction>
+
+<available_endpoints>
+POST /boards — {{"name", "emoji", "parent_id"}} → создать доску
+GET  /boards — список всех досок
+GET  /videos?board_id=N — видео в доске
+POST /videos — {{"url", "board_id"}} → добавить 1 видео
+POST /videos/bulk — {{"urls":[...], "board_id"}} → добавить пачку
+GET  /videos/{{id}} — полные данные видео (кадры + транскрипция)
+POST /ai/highlights/{{id}} → найти виральные моменты
+POST /clips — {{"video_id", "start_sec", "end_sec", "label"}} → создать клип
+POST /remixes — {{"title", "clip_ids":[...], "with_subtitles":true}} → собрать ремикс
+POST /search — {{"query": "..."}} → поиск по всей базе
+</available_endpoints>
+
+<trending_search>
+Если нужно найти популярные видео:
+curl -X POST http://127.0.0.1:8765/api/trending -H "Content-Type: application/json" -d '{{"query":"dogs funny","limit":20}}'
+</trending_search>
+
+Правила:
+1. Делай шаги через curl. Результаты парси.
+2. НЕ спрашивай подтверждений — выполняй всё автоматически
+3. После каждого шага — кратко отчитайся одной строкой что сделал
+4. В конце — итоговый отчёт что получилось
+
+Начни выполнять инструкцию прямо сейчас.
+"""
+    return await _call_claude(prompt, timeout=1200)
+
+
 async def extract_highlights(video_data: dict) -> str:
     """Find viral/interesting moments in the video. Returns markdown with timestamps."""
     v = video_data["video"]

@@ -47,6 +47,34 @@ class AIAskIn(BaseModel):
     question: str
 
 
+class ClipIn(BaseModel):
+    video_id: int
+    start_sec: float
+    end_sec: float
+    label: str = ""
+    tags: str = ""
+    notes: str = ""
+    board_id: Optional[int] = None
+
+
+class RemixIn(BaseModel):
+    board_id: Optional[int] = None
+    title: str = "Untitled Remix"
+    clip_ids: list = []
+    manual_clips: list = []  # [{video_id, start_sec, end_sec}, ...]
+    with_subtitles: bool = False
+
+
+class BulkImportIn(BaseModel):
+    urls: list
+    board_id: Optional[int] = None
+
+
+class SearchIn(BaseModel):
+    query: str
+    limit: int = 50
+
+
 # ── Static files: frontend + data/frames + data/videos ──
 app.mount("/static", StaticFiles(directory=str(FRONTEND)), name="static")
 app.mount("/data", StaticFiles(directory=str(DATA)), name="data")
@@ -95,12 +123,17 @@ def get_video(video_id: int):
     return data
 
 
+PARALLEL_LIMIT = 3  # max concurrent videos in pipeline
+_pipeline_sem = asyncio.Semaphore(PARALLEL_LIMIT)
+
+
 async def _process_in_background(video_id, url):
-    try:
-        await pipeline.process_video(video_id, url)
-    except Exception as e:
-        print(f"[pipeline] video {video_id} failed: {e}")
-        db.update_video(video_id, status=f"error: {str(e)[:200]}")
+    async with _pipeline_sem:
+        try:
+            await pipeline.process_video(video_id, url)
+        except Exception as e:
+            print(f"[pipeline] video {video_id} failed: {e}")
+            db.update_video(video_id, status=f"error: {str(e)[:200]}")
 
 
 @app.post("/api/videos")
@@ -174,6 +207,135 @@ async def ai_highlights(video_id: int):
     try:
         result = await ai.extract_highlights(data)
         return {"highlights": result}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ── CLIPS ──
+@app.get("/api/clips")
+def get_clips(video_id: Optional[int] = None, board_id: Optional[int] = None):
+    return db.list_clips(video_id=video_id, board_id=board_id)
+
+
+@app.post("/api/clips")
+def post_clip(body: ClipIn):
+    clip_id = db.create_clip(
+        body.video_id, body.start_sec, body.end_sec,
+        body.label, body.tags, body.notes, body.board_id
+    )
+    return {"id": clip_id}
+
+
+@app.delete("/api/clips/{clip_id}")
+def del_clip(clip_id: int):
+    db.delete_clip(clip_id)
+    return {"status": "deleted"}
+
+
+# ── REMIXES ──
+@app.get("/api/remixes")
+def get_remixes(board_id: Optional[int] = None):
+    return db.list_remixes(board_id)
+
+
+@app.get("/api/remixes/{remix_id}")
+def get_remix(remix_id: int):
+    r = db.get_remix(remix_id)
+    if not r:
+        raise HTTPException(404)
+    return r
+
+
+async def _build_remix_bg(remix_id: int, manual_clips: list, with_subtitles: bool):
+    try:
+        db.update_remix(remix_id, status="building")
+        out_path = await pipeline.build_remix(remix_id, manual_clips, with_subtitles)
+        db.update_remix(remix_id, status="ready", output_path=out_path)
+    except Exception as e:
+        db.update_remix(remix_id, status=f"error: {str(e)[:200]}")
+
+
+@app.post("/api/remixes")
+async def post_remix(body: RemixIn):
+    import json as _json
+    manual_clips = list(body.manual_clips)
+    # Expand clip_ids into manual_clips
+    for cid in body.clip_ids:
+        c = db.get_clip(cid)
+        if c:
+            manual_clips.append({
+                "video_id": c["video_id"],
+                "start_sec": c["start_sec"],
+                "end_sec": c["end_sec"],
+            })
+    if not manual_clips:
+        raise HTTPException(400, "no clips provided")
+
+    remix_id = db.create_remix(
+        body.board_id, body.title,
+        _json.dumps(manual_clips),
+        body.with_subtitles
+    )
+    asyncio.create_task(_build_remix_bg(remix_id, manual_clips, body.with_subtitles))
+    return {"id": remix_id, "status": "queued"}
+
+
+# ── BULK IMPORT ──
+@app.post("/api/videos/bulk")
+async def bulk_import(body: BulkImportIn):
+    board_id = body.board_id
+    if board_id is None:
+        boards = db.list_boards()
+        inbox = next((b for b in boards if b["name"] == "Inbox"), None)
+        board_id = inbox["id"] if inbox else 1
+
+    created = []
+    for url in body.urls:
+        url = url.strip()
+        if not url:
+            continue
+        vid = db.create_video(board_id, url, title="(queued)", status="queued")
+        asyncio.create_task(_process_in_background(vid, url))
+        created.append(vid)
+    return {"queued": len(created), "ids": created}
+
+
+# ── SEARCH ──
+@app.post("/api/search")
+def search(body: SearchIn):
+    frames = db.search_frames(body.query, body.limit)
+    transcripts = db.search_transcripts(body.query, body.limit)
+    return {"frames": frames, "transcripts": transcripts}
+
+
+# ── TRENDING ──
+class TrendingIn(BaseModel):
+    query: str
+    limit: int = 20
+
+
+@app.post("/api/trending")
+async def trending(body: TrendingIn):
+    import trending as tr
+    try:
+        videos = await tr.search_youtube(body.query, body.limit)
+        return {"videos": videos}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ── AUTONOMOUS AI BOT ──
+class DirectorIn(BaseModel):
+    instruction: str
+
+
+@app.post("/api/ai/director")
+async def ai_director(body: DirectorIn):
+    """Full autonomous pipeline: AI does everything by calling our own API."""
+    import ai
+    try:
+        result = await ai.autonomous_pipeline(body.instruction)
+        return {"result": result}
     except Exception as e:
         return {"error": str(e)}
 

@@ -10,8 +10,10 @@ DATA = BASE / "data"
 VIDEOS_DIR = DATA / "videos"
 FRAMES_DIR = DATA / "frames"
 AUDIO_DIR = DATA / "audio"
+CLIPS_DIR = DATA / "clips"
+REMIXES_DIR = DATA / "remixes"
 
-for d in (VIDEOS_DIR, FRAMES_DIR, AUDIO_DIR):
+for d in (VIDEOS_DIR, FRAMES_DIR, AUDIO_DIR, CLIPS_DIR, REMIXES_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
 # Homebrew binary paths (not always on $PATH for GUI apps)
@@ -175,6 +177,181 @@ async def process_video(video_id, url, progress_cb=None):
     except Exception as e:
         print(f"[transcribe] failed for {video_id}: {e}")
 
+    # Auto vision tagging in background — don't block the pipeline
+    db.update_video(video_id, status="tagging_frames")
+    await _progress("tagging_frames")
+    try:
+        import ai
+        frame_rows = db.list_frames(video_id)
+        batch_size = 10
+        for i in range(0, len(frame_rows), batch_size):
+            batch = frame_rows[i:i+batch_size]
+            paths = [f["thumbnail_path"] for f in batch]
+            descriptions = await ai.describe_frames_batch(paths)
+            for frame, desc in zip(batch, descriptions):
+                db.update_frame_description(frame["id"], desc)
+    except Exception as e:
+        print(f"[auto-tag] failed for {video_id}: {e}")
+
     db.update_video(video_id, status="ready")
     await _progress("ready")
     return {"frames": len(frames), "meta": meta}
+
+
+async def cut_clip(video_path, start_sec, end_sec, out_path):
+    """Extract a sub-clip from video using ffmpeg, re-encode for seekability."""
+    duration = end_sec - start_sec
+    cmd = [
+        FFMPEG, "-y",
+        "-ss", str(start_sec),
+        "-i", video_path,
+        "-t", str(duration),
+        "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+        "-c:a", "aac", "-b:a", "128k",
+        str(out_path),
+    ]
+    _, stderr, code = await _run(cmd, timeout=300)
+    if code != 0:
+        raise RuntimeError(f"ffmpeg cut failed: {stderr[:300]}")
+    return str(out_path)
+
+
+async def concat_clips(clip_paths, out_path):
+    """Concatenate multiple mp4 clips into one using ffmpeg concat demuxer."""
+    if not clip_paths:
+        raise RuntimeError("no clips to concat")
+    # Write concat list
+    list_file = out_path.parent / f"{out_path.stem}_list.txt"
+    list_file.write_text("\n".join(f"file '{p}'" for p in clip_paths))
+
+    cmd = [
+        FFMPEG, "-y",
+        "-f", "concat", "-safe", "0",
+        "-i", str(list_file),
+        "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+        "-c:a", "aac", "-b:a", "128k",
+        str(out_path),
+    ]
+    _, stderr, code = await _run(cmd, timeout=600)
+    list_file.unlink(missing_ok=True)
+    if code != 0:
+        raise RuntimeError(f"ffmpeg concat failed: {stderr[:300]}")
+    return str(out_path)
+
+
+async def burn_subtitles(video_path, srt_path, out_path):
+    """Burn SRT subtitles into video."""
+    # Escape path for ffmpeg subtitles filter
+    srt_escaped = str(srt_path).replace(":", r"\:").replace(",", r"\,")
+    cmd = [
+        FFMPEG, "-y",
+        "-i", video_path,
+        "-vf", f"subtitles={srt_escaped}:force_style='FontName=Arial,FontSize=24,PrimaryColour=&Hffffff,OutlineColour=&H000000,BorderStyle=3,Outline=2,Alignment=2,MarginV=60'",
+        "-c:a", "copy",
+        str(out_path),
+    ]
+    _, stderr, code = await _run(cmd, timeout=600)
+    if code != 0:
+        raise RuntimeError(f"ffmpeg subtitles failed: {stderr[:300]}")
+    return str(out_path)
+
+
+def _sec_to_srt_ts(sec):
+    """Convert seconds to SRT timestamp HH:MM:SS,mmm."""
+    h = int(sec // 3600)
+    m = int((sec % 3600) // 60)
+    s = int(sec % 60)
+    ms = int((sec - int(sec)) * 1000)
+    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+
+def transcripts_to_srt(transcripts, srt_path, time_offset=0):
+    """Convert transcript list to SRT file. Applies time_offset to all timestamps (for clips)."""
+    lines = []
+    for i, t in enumerate(transcripts, 1):
+        start = max(0, t["start_sec"] - time_offset)
+        end = max(0, t["end_sec"] - time_offset)
+        lines.append(f"{i}")
+        lines.append(f"{_sec_to_srt_ts(start)} --> {_sec_to_srt_ts(end)}")
+        lines.append(t["text"])
+        lines.append("")
+    Path(srt_path).write_text("\n".join(lines))
+
+
+async def build_remix(remix_id, clips, with_subtitles=False, progress_cb=None):
+    """Build a full remix: cut clips, concat, optionally burn subtitles.
+    clips: list of {video_id, start_sec, end_sec}
+    """
+    import db as _db
+
+    async def _p(msg):
+        if progress_cb:
+            try:
+                await progress_cb(msg)
+            except Exception:
+                pass
+
+    # Cut each clip
+    clip_files = []
+    await _p("cutting")
+    for i, c in enumerate(clips):
+        v = _db.get_video(c["video_id"])
+        if not v:
+            continue
+        video_path = v["video"]["local_path"]
+        if not video_path or not os.path.exists(video_path):
+            continue
+        clip_out = CLIPS_DIR / f"remix{remix_id}_clip{i}.mp4"
+        await cut_clip(video_path, c["start_sec"], c["end_sec"], clip_out)
+        clip_files.append(str(clip_out))
+
+    if not clip_files:
+        raise RuntimeError("no clips could be cut")
+
+    # Concat
+    await _p("concatenating")
+    raw_out = REMIXES_DIR / f"remix{remix_id}_raw.mp4"
+    await concat_clips(clip_files, raw_out)
+
+    final_out = REMIXES_DIR / f"remix{remix_id}.mp4"
+
+    # Subtitles
+    if with_subtitles:
+        await _p("generating subtitles")
+        # Collect transcripts across all source clips with offset
+        all_subs = []
+        time_cursor = 0
+        for c in clips:
+            v_data = _db.get_video(c["video_id"])
+            if not v_data:
+                continue
+            for t in v_data["transcripts"]:
+                # Only include transcripts within clip range
+                if t["start_sec"] >= c["start_sec"] and t["end_sec"] <= c["end_sec"]:
+                    all_subs.append({
+                        "start_sec": time_cursor + (t["start_sec"] - c["start_sec"]),
+                        "end_sec": time_cursor + (t["end_sec"] - c["start_sec"]),
+                        "text": t["text"],
+                    })
+            time_cursor += (c["end_sec"] - c["start_sec"])
+
+        if all_subs:
+            srt_path = REMIXES_DIR / f"remix{remix_id}.srt"
+            transcripts_to_srt(all_subs, srt_path)
+            await _p("burning subtitles")
+            await burn_subtitles(str(raw_out), str(srt_path), str(final_out))
+            raw_out.unlink(missing_ok=True)
+        else:
+            raw_out.rename(final_out)
+    else:
+        raw_out.rename(final_out)
+
+    # Cleanup temporary clip files
+    for cf in clip_files:
+        try:
+            os.remove(cf)
+        except Exception:
+            pass
+
+    await _p("ready")
+    return str(final_out)

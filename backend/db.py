@@ -67,9 +67,38 @@ def init_db():
         )
     """)
 
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS clips (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            video_id INTEGER REFERENCES videos(id) ON DELETE CASCADE,
+            board_id INTEGER REFERENCES boards(id) ON DELETE SET NULL,
+            start_sec REAL NOT NULL,
+            end_sec REAL NOT NULL,
+            label TEXT,
+            tags TEXT,
+            notes TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS remixes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            board_id INTEGER REFERENCES boards(id) ON DELETE SET NULL,
+            title TEXT,
+            clips_json TEXT,
+            output_path TEXT,
+            with_subtitles INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'pending',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     c.execute("CREATE INDEX IF NOT EXISTS idx_frames_video ON frames(video_id)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_transcripts_video ON transcripts(video_id)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_videos_board ON videos(board_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_clips_video ON clips(video_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_clips_board ON clips(board_id)")
 
     # Seed default boards if empty
     row = c.execute("SELECT COUNT(*) AS n FROM boards").fetchone()
@@ -198,6 +227,112 @@ def list_frames(video_id):
     rows = conn.execute(
         "SELECT * FROM frames WHERE video_id = ? ORDER BY second",
         (video_id,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+# ── CLIPS ──
+def create_clip(video_id, start_sec, end_sec, label="", tags="", notes="", board_id=None):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO clips (video_id, board_id, start_sec, end_sec, label, tags, notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (video_id, board_id, start_sec, end_sec, label, tags, notes)
+    )
+    cid = c.lastrowid
+    conn.commit()
+    conn.close()
+    return cid
+
+
+def list_clips(video_id=None, board_id=None):
+    conn = get_db()
+    if video_id is not None:
+        rows = conn.execute("SELECT * FROM clips WHERE video_id = ? ORDER BY start_sec", (video_id,)).fetchall()
+    elif board_id is not None:
+        rows = conn.execute("SELECT * FROM clips WHERE board_id = ? ORDER BY created_at DESC", (board_id,)).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM clips ORDER BY created_at DESC").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_clip(clip_id):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM clips WHERE id = ?", (clip_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def delete_clip(clip_id):
+    conn = get_db()
+    conn.execute("DELETE FROM clips WHERE id = ?", (clip_id,))
+    conn.commit()
+    conn.close()
+
+
+# ── REMIXES ──
+def create_remix(board_id, title, clips_json, with_subtitles=False):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO remixes (board_id, title, clips_json, with_subtitles, status) VALUES (?, ?, ?, ?, 'pending')",
+        (board_id, title, clips_json, int(with_subtitles))
+    )
+    rid = c.lastrowid
+    conn.commit()
+    conn.close()
+    return rid
+
+
+def update_remix(remix_id, **fields):
+    if not fields:
+        return
+    conn = get_db()
+    sets = ", ".join(f"{k} = ?" for k in fields)
+    vals = list(fields.values()) + [remix_id]
+    conn.execute(f"UPDATE remixes SET {sets} WHERE id = ?", vals)
+    conn.commit()
+    conn.close()
+
+
+def list_remixes(board_id=None):
+    conn = get_db()
+    if board_id is not None:
+        rows = conn.execute("SELECT * FROM remixes WHERE board_id = ? ORDER BY created_at DESC", (board_id,)).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM remixes ORDER BY created_at DESC").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_remix(remix_id):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM remixes WHERE id = ?", (remix_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+# ── CROSS-BOARD SEARCH ──
+def search_frames(query, limit=50):
+    """Full-text search in frame descriptions."""
+    conn = get_db()
+    q = f"%{query}%"
+    rows = conn.execute(
+        "SELECT f.*, v.title as video_title, v.board_id FROM frames f JOIN videos v ON v.id = f.video_id WHERE f.description LIKE ? LIMIT ?",
+        (q, limit)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def search_transcripts(query, limit=50):
+    conn = get_db()
+    q = f"%{query}%"
+    rows = conn.execute(
+        "SELECT t.*, v.title as video_title, v.board_id FROM transcripts t JOIN videos v ON v.id = t.video_id WHERE t.text LIKE ? LIMIT ?",
+        (q, limit)
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]

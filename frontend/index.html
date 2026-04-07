@@ -22,7 +22,23 @@
   }
   .add-url input {
     background: none; border: none; outline: none; color: #fff;
-    font-size: 13px; padding: 4px 10px; width: 380px;
+    font-size: 13px; padding: 4px 10px; width: 320px;
+  }
+  .search-box {
+    display: flex; gap: 6px;
+    background: #18181b;
+    border: 1px solid #27272a;
+    border-radius: 8px;
+    padding: 4px;
+  }
+  .search-box input {
+    background: none; border: none; outline: none; color: #fff;
+    font-size: 13px; padding: 4px 10px; width: 220px;
+  }
+  .search-box button {
+    background: #27272a; color: #fff; border: none;
+    padding: 6px 12px; border-radius: 6px; font-size: 12px;
+    cursor: pointer;
   }
   .add-url input::placeholder { color: #555; }
   .add-url button {
@@ -123,6 +139,58 @@
     overflow: hidden;
   }
   .video-meta { font-size: 11px; color: #666; }
+
+  /* SUB-BOARD CARDS on canvas */
+  .subboard-section {
+    margin-bottom: 24px;
+  }
+  .subboard-title {
+    font-size: 11px; color: #555; text-transform: uppercase;
+    letter-spacing: 0.5px; margin-bottom: 10px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .subboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 14px;
+    margin-bottom: 10px;
+  }
+  .subboard-card {
+    background: #151517;
+    border: 1.5px solid #2a2a2e;
+    border-radius: 10px;
+    padding: 12px;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .subboard-card:hover { border-color: #3b82f6; background: #1a1a1e; transform: translateY(-1px); }
+  .subboard-card .head {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+  }
+  .subboard-card .emoji { font-size: 22px; }
+  .subboard-card .name { font-size: 13px; font-weight: 600; color: #fff; }
+  .subboard-card .thumbs {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; margin-bottom: 8px;
+  }
+  .subboard-card .thumb {
+    aspect-ratio: 16/9; background: #0a0a0b;
+    border-radius: 3px; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; color: #333;
+  }
+  .subboard-card .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .subboard-card .meta {
+    font-size: 10px; color: #666;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .subboard-card .enter { color: #3b82f6; }
+
+  /* DRAG & DROP */
+  .video-card.dragging { opacity: 0.4; }
+  .board-item.drop-target, .subboard-card.drop-target {
+    background: #1e3a5f;
+    border-color: #3b82f6;
+  }
   .video-actions {
     display: flex; gap: 4px; margin-top: 6px; align-items: center;
   }
@@ -288,6 +356,127 @@
   }
   .transcript-line .txt { color: #c0c0c0; flex: 1; }
 
+  /* CLIPS SECTION */
+  .clips-section {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid #1a1a1c;
+  }
+  .clip-creator {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 10px;
+    align-items: center;
+  }
+  .clip-input {
+    background: #18181b;
+    border: 1px solid #27272a;
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    outline: none;
+    width: 60px;
+  }
+  .clip-input.wide { flex: 1; min-width: 0; }
+  .clip-btn {
+    background: #3b82f6;
+    color: #fff;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .clip-btn:hover { background: #2563eb; }
+  .clip-list { display: flex; flex-direction: column; gap: 6px; }
+  .clip-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #0a0a0b;
+    border: 1px solid #1a1a1c;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  .clip-row .clip-time {
+    color: #3b82f6;
+    font-family: Monaco, monospace;
+    font-size: 10px;
+    min-width: 60px;
+  }
+  .clip-row .clip-label { flex: 1; color: #d0d0d0; }
+  .clip-row .clip-del {
+    color: #666;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0 4px;
+  }
+  .clip-row .clip-del:hover { color: #f87171; }
+  .clip-row .clip-check { cursor: pointer; }
+
+  .remix-bar {
+    position: sticky;
+    bottom: 0;
+    background: #0a0a0b;
+    border-top: 1px solid #27272a;
+    padding: 10px;
+    margin-top: 10px;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .remix-bar .cnt { color: #888; font-size: 11px; margin-right: auto; }
+
+  /* SEARCH RESULTS */
+  .search-results-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.8);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    padding: 30px;
+  }
+  .search-results-modal.open { display: flex; }
+  .search-results {
+    background: #101012;
+    border: 1px solid #27272a;
+    border-radius: 12px;
+    width: 100%;
+    max-width: 900px;
+    max-height: 80vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .search-results h2 {
+    padding: 16px 20px;
+    border-bottom: 1px solid #1a1a1c;
+    font-size: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .search-results .list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px 20px;
+  }
+  .search-result-item {
+    padding: 10px 12px;
+    border-bottom: 1px solid #1a1a1c;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .search-result-item:hover { background: #18181b; }
+  .search-result-item .title { color: #60a5fa; font-size: 11px; margin-bottom: 3px; }
+  .search-result-item .text { color: #d0d0d0; }
+  .search-result-item .ts { color: #666; font-family: Monaco, monospace; font-size: 10px; margin-right: 6px; }
+
   /* AI PANEL */
   .modal-ai {
     background: #0a0a0b;
@@ -328,12 +517,18 @@
 <body>
 
 <div class="topbar">
-  <div class="logo">🎬 Video Factory <span class="muted">— decomposer</span></div>
+  <div class="logo">🎬 Video Factory</div>
   <div class="topbar-spacer"></div>
+  <div class="search-box">
+    <input id="searchInput" placeholder="🔍 Поиск по всем кадрам..." onkeydown="if(event.key==='Enter')doSearch()" />
+    <button onclick="doSearch()">Search</button>
+  </div>
   <div class="add-url">
-    <input id="urlInput" placeholder="Вставь YouTube ссылку..." />
+    <input id="urlInput" placeholder="YouTube URL..." />
     <button id="addBtn" onclick="addVideo()">+ Добавить</button>
   </div>
+  <button class="share-btn" onclick="bulkImportPrompt()" style="background:#27272a;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;cursor:pointer">📦 Bulk</button>
+  <button class="share-btn" onclick="directorPrompt()" style="background:#3b82f6;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;cursor:pointer">🎬 AI Director</button>
 </div>
 
 <div class="main">
@@ -346,7 +541,25 @@
   <div class="canvas">
     <h1 id="boardTitle">📥 Inbox</h1>
     <p class="desc" id="boardDesc">Сюда попадают все новые видео. Вставь ссылку YouTube сверху.</p>
+
+    <div class="subboard-section" id="subboardSection" style="display:none">
+      <div class="subboard-title">📁 Под-доски</div>
+      <div class="subboard-grid" id="subboardGrid"></div>
+    </div>
+
+    <div class="subboard-title" id="videosTitle" style="display:none">🎥 Видео</div>
     <div class="video-grid" id="videoGrid"></div>
+  </div>
+</div>
+
+<!-- SEARCH RESULTS MODAL -->
+<div class="search-results-modal" id="searchModal" onclick="if(event.target===this) this.classList.remove('open')">
+  <div class="search-results">
+    <h2>
+      <span>🔍 Результаты поиска: <span id="searchQuery"></span></span>
+      <button class="close-btn" style="position:relative;top:0;right:0" onclick="document.getElementById('searchModal').classList.remove('open')">×</button>
+    </h2>
+    <div class="list" id="searchList"></div>
   </div>
 </div>
 
@@ -437,7 +650,10 @@ async function loadBoards() {
     const html = `
       <div class="${className}"
            oncontextmenu="event.preventDefault(); createSubBoardPrompt(${b.id}); return false;"
-           onclick="selectBoard(${b.id}, '${safeName}', '${b.emoji}')">
+           onclick="selectBoard(${b.id}, '${safeName}', '${b.emoji}')"
+           ondragover="event.preventDefault(); this.classList.add('drop-target')"
+           ondragleave="this.classList.remove('drop-target')"
+           ondrop="handleDrop(event, ${b.id})">
         ${chevron}
         <span>${b.emoji}</span>
         <span>${b.name}</span>
@@ -497,6 +713,58 @@ async function selectBoard(id, name, emoji) {
   document.getElementById('boardTitle').textContent = `${emoji} ${name}`;
   await loadBoards();
   await loadVideos();
+  await renderSubBoards(id);
+}
+
+async function renderSubBoards(parentId) {
+  const section = document.getElementById('subboardSection');
+  const grid = document.getElementById('subboardGrid');
+  const videosTitle = document.getElementById('videosTitle');
+
+  const children = state.boards.filter(b => b.parent_id === parentId);
+  if (children.length === 0) {
+    section.style.display = 'none';
+    videosTitle.style.display = 'none';
+    return;
+  }
+
+  section.style.display = 'block';
+  videosTitle.style.display = 'block';
+
+  // Fetch preview frames for each child board
+  const cards = await Promise.all(children.map(async c => {
+    const vids = await (await fetch(API + '/videos?board_id=' + c.id)).json();
+    const thumbs = [];
+    for (let i = 0; i < 6; i++) {
+      const v = vids[i];
+      if (v && v.local_path) {
+        thumbs.push(`<div class="thumb"><img src="${DATA_URL}/frames/${v.id}/frame_0001.jpg" /></div>`);
+      } else if (v) {
+        thumbs.push(`<div class="thumb">🎬</div>`);
+      } else {
+        thumbs.push(`<div class="thumb"></div>`);
+      }
+    }
+    return `
+      <div class="subboard-card"
+           onclick="selectBoard(${c.id}, '${c.name.replace(/'/g,"\\'")}', '${c.emoji}')"
+           ondragover="event.preventDefault(); this.classList.add('drop-target')"
+           ondragleave="this.classList.remove('drop-target')"
+           ondrop="handleDrop(event, ${c.id})">
+        <div class="head">
+          <div class="emoji">${c.emoji}</div>
+          <div class="name">${escapeHtml(c.name)}</div>
+        </div>
+        <div class="thumbs">${thumbs.join('')}</div>
+        <div class="meta">
+          <span>${vids.length} видео</span>
+          <span class="enter">Enter →</span>
+        </div>
+      </div>
+    `;
+  }));
+
+  grid.innerHTML = cards.join('');
 }
 
 async function loadVideos() {
@@ -531,7 +799,10 @@ function renderVideos() {
       ? `background-image: url('${DATA_URL}/frames/${v.id}/frame_0001.jpg'); background-size: cover; background-position: center;`
       : '';
     return `
-      <div class="video-card">
+      <div class="video-card"
+           draggable="true"
+           ondragstart="handleDragStart(event, ${v.id})"
+           ondragend="this.classList.remove('dragging')">
         <div class="video-thumb" style="${thumbStyle}" onclick="openDetail(${v.id})">
           ${!v.local_path ? '<span class="placeholder">🎬</span>' : ''}
           <span class="video-status ${status}">${statusLabel}</span>
@@ -559,6 +830,34 @@ function escapeHtml(str) {
   return (str || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// === DRAG & DROP ===
+let dragVideoId = null;
+
+function handleDragStart(e, videoId) {
+  dragVideoId = videoId;
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+async function handleDrop(e, targetBoardId) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drop-target');
+  if (!dragVideoId) return;
+  try {
+    await fetch(API + '/videos/' + dragVideoId + '/move', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({board_id: targetBoardId}),
+    });
+    dragVideoId = null;
+    await loadBoards();
+    await loadVideos();
+    await renderSubBoards(state.currentBoardId);
+  } catch (err) {
+    alert('Drop error: ' + err.message);
+  }
+}
+
 async function moveVideo(videoId) {
   const options = state.boards.map((b, i) => `${i+1}) ${b.emoji} ${b.name}`).join('\n');
   const choice = prompt(`Куда переместить видео?\n\n${options}\n\nВведи номер:`);
@@ -573,6 +872,95 @@ async function moveVideo(videoId) {
   });
   await loadBoards();
   await loadVideos();
+}
+
+async function doSearch() {
+  const q = document.getElementById('searchInput').value.trim();
+  if (!q) return;
+  try {
+    const res = await fetch(API + '/search', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({query: q, limit: 100}),
+    });
+    const data = await res.json();
+    document.getElementById('searchQuery').textContent = `"${q}"`;
+    const list = document.getElementById('searchList');
+    const frames = data.frames || [];
+    const transcripts = data.transcripts || [];
+    if (frames.length === 0 && transcripts.length === 0) {
+      list.innerHTML = '<div style="color:#666;padding:20px;text-align:center">Ничего не найдено</div>';
+    } else {
+      let html = '';
+      if (frames.length > 0) {
+        html += `<div style="color:#555;font-size:10px;text-transform:uppercase;margin-bottom:8px">🖼️ Кадры (${frames.length})</div>`;
+        html += frames.map(f => `
+          <div class="search-result-item" onclick="openDetail(${f.video_id})">
+            <div class="title">${escapeHtml(f.video_title || 'unknown')}</div>
+            <div class="text"><span class="ts">${formatDuration(f.second)}</span>${escapeHtml(f.description || '')}</div>
+          </div>
+        `).join('');
+      }
+      if (transcripts.length > 0) {
+        html += `<div style="color:#555;font-size:10px;text-transform:uppercase;margin:16px 0 8px">💬 Транскрипция (${transcripts.length})</div>`;
+        html += transcripts.map(t => `
+          <div class="search-result-item" onclick="openDetail(${t.video_id})">
+            <div class="title">${escapeHtml(t.video_title || 'unknown')}</div>
+            <div class="text"><span class="ts">${formatDuration(t.start_sec)}</span>${escapeHtml(t.text || '')}</div>
+          </div>
+        `).join('');
+      }
+      list.innerHTML = html;
+    }
+    document.getElementById('searchModal').classList.add('open');
+  } catch (e) {
+    alert('Search error: ' + e.message);
+  }
+}
+
+async function directorPrompt() {
+  const instr = prompt(
+    '🎬 AI Director\n\n' +
+    'Опиши что нужно сделать. Примеры:\n' +
+    '• "Создай доску Dogs, найди 10 trending shorts про собак, скачай и обработай"\n' +
+    '• "Найди в базе все клипы где кто-то смеётся, собери компиляцию с субтитрами"\n' +
+    '• "Создай доску Animals > Foxes, скачай 5 видео о тибетских лисах"\n\n' +
+    'Твоя инструкция:'
+  );
+  if (!instr) return;
+  alert('🎬 AI Director начал работу. Это может занять несколько минут. Следи за обновлением списков.');
+  try {
+    const res = await fetch(API + '/ai/director', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({instruction: instr}),
+    });
+    const data = await res.json();
+    alert('✓ AI Director завершил:\n\n' + (data.result || data.error || '(пусто)'));
+    await loadBoards();
+    await loadVideos();
+  } catch (e) {
+    alert('Ошибка: ' + e.message);
+  }
+}
+
+async function bulkImportPrompt() {
+  const text = prompt('Вставь YouTube URL-ы (по одному на строку):');
+  if (!text) return;
+  const urls = text.split('\n').map(u => u.trim()).filter(u => u.length > 0);
+  if (urls.length === 0) return;
+  try {
+    const res = await fetch(API + '/videos/bulk', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({urls, board_id: state.currentBoardId}),
+    });
+    const data = await res.json();
+    alert(`✓ Поставлено в очередь: ${data.queued} видео`);
+    await loadVideos();
+  } catch (e) {
+    alert('Ошибка: ' + e.message);
+  }
 }
 
 async function addVideo() {
@@ -685,13 +1073,127 @@ async function renderDetail(videoId) {
       <div class="transcript-box">${transcriptHtml}</div>
     </div>
 
-    <div class="field">
+    <div class="clips-section">
+      <div class="field-label">✂️ Клипы из этого видео</div>
+      <div class="clip-creator">
+        <input id="clipStart" class="clip-input" placeholder="0" type="number" step="0.5" />
+        <span style="color:#666">→</span>
+        <input id="clipEnd" class="clip-input" placeholder="5" type="number" step="0.5" />
+        <input id="clipLabel" class="clip-input wide" placeholder="название..." />
+        <button class="clip-btn" onclick="saveClip()">+ Клип</button>
+      </div>
+      <div class="clip-list" id="clipList"></div>
+    </div>
+
+    <div class="remix-bar">
+      <span class="cnt" id="remixCount">0 клипов выбрано</span>
+      <label style="color:#888;font-size:11px;display:flex;gap:4px;align-items:center">
+        <input type="checkbox" id="remixSubs" /> Субтитры
+      </label>
+      <button class="clip-btn" onclick="buildRemix()">🎬 Собрать ремикс</button>
+    </div>
+
+    <div class="field" style="margin-top:14px">
       <div class="field-label">Raw data</div>
       <div class="field-value" style="font-size:11px;color:#555;font-family:Monaco,monospace">
         id: ${v.id} · board: ${v.board_id} · path: ${v.local_path || '(none)'}
       </div>
     </div>
   `;
+
+  // Render clips for this video
+  await loadVideoClips(v.id);
+}
+
+async function loadVideoClips(videoId) {
+  try {
+    const res = await fetch(API + '/clips?video_id=' + videoId);
+    const clips = await res.json();
+    const list = document.getElementById('clipList');
+    if (!list) return;
+    if (clips.length === 0) {
+      list.innerHTML = '<div style="color:#555;font-size:11px;padding:6px 0">Пока нет клипов. Введи start → end → название и нажми + Клип</div>';
+      updateRemixCount();
+      return;
+    }
+    list.innerHTML = clips.map(c => `
+      <div class="clip-row">
+        <input type="checkbox" class="clip-check" data-clip-id="${c.id}" onchange="updateRemixCount()" />
+        <span class="clip-time">${formatDuration(c.start_sec)}–${formatDuration(c.end_sec)}</span>
+        <span class="clip-label" onclick="seekTo(${c.start_sec})">${escapeHtml(c.label || '(без названия)')}</span>
+        <span class="clip-del" onclick="deleteClip(${c.id})">×</span>
+      </div>
+    `).join('');
+    updateRemixCount();
+  } catch (e) {
+    console.error('loadVideoClips', e);
+  }
+}
+
+async function saveClip() {
+  const start = parseFloat(document.getElementById('clipStart').value);
+  const end = parseFloat(document.getElementById('clipEnd').value);
+  const label = document.getElementById('clipLabel').value.trim();
+  if (isNaN(start) || isNaN(end) || end <= start) {
+    alert('Неправильные времена: start должен быть < end');
+    return;
+  }
+  if (!currentVideoId) return;
+  await fetch(API + '/clips', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      video_id: currentVideoId,
+      start_sec: start,
+      end_sec: end,
+      label,
+    }),
+  });
+  document.getElementById('clipStart').value = '';
+  document.getElementById('clipEnd').value = '';
+  document.getElementById('clipLabel').value = '';
+  await loadVideoClips(currentVideoId);
+}
+
+async function deleteClip(clipId) {
+  if (!confirm('Удалить клип?')) return;
+  await fetch(API + '/clips/' + clipId, {method: 'DELETE'});
+  await loadVideoClips(currentVideoId);
+}
+
+function updateRemixCount() {
+  const checks = document.querySelectorAll('.clip-check:checked');
+  const el = document.getElementById('remixCount');
+  if (el) el.textContent = `${checks.length} клипов выбрано`;
+}
+
+async function buildRemix() {
+  const checks = document.querySelectorAll('.clip-check:checked');
+  if (checks.length === 0) {
+    alert('Выдели хотя бы один клип галочкой');
+    return;
+  }
+  const clipIds = Array.from(checks).map(c => parseInt(c.dataset.clipId));
+  const title = prompt('Название ремикса:', 'Remix ' + new Date().toLocaleString());
+  if (!title) return;
+  const withSubs = document.getElementById('remixSubs').checked;
+
+  try {
+    const res = await fetch(API + '/remixes', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        title,
+        clip_ids: clipIds,
+        with_subtitles: withSubs,
+        board_id: state.currentBoardId,
+      }),
+    });
+    const data = await res.json();
+    alert(`✓ Ремикс #${data.id} в очереди. Файл будет в data/remixes/remix${data.id}.mp4 когда закончится.`);
+  } catch (e) {
+    alert('Ошибка: ' + e.message);
+  }
 }
 
 function seekTo(sec) {
