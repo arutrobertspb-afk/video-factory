@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Video Factory</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif; }
+  body { background: #0a0a0b; color: #e8e6e3; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+
+  /* TOP BAR */
+  .topbar { height: 52px; background: #0a0a0b; border-bottom: 1px solid #1a1a1c; display: flex; align-items: center; padding: 0 20px; gap: 14px; flex-shrink: 0; z-index: 20; }
+  .logo { font-size: 14px; font-weight: 600; color: #fff; }
+  .logo .muted { color: #666; font-weight: 400; }
+  .topbar-spacer { flex: 1; }
+  .add-url {
+    display: flex;
+    gap: 6px;
+    background: #18181b;
+    border: 1px solid #27272a;
+    border-radius: 8px;
+    padding: 4px;
+  }
+  .add-url input {
+    background: none; border: none; outline: none; color: #fff;
+    font-size: 13px; padding: 4px 10px; width: 380px;
+  }
+  .add-url input::placeholder { color: #555; }
+  .add-url button {
+    background: #3b82f6; color: #fff; border: none;
+    padding: 6px 14px; border-radius: 6px; font-size: 12px;
+    cursor: pointer; font-weight: 500;
+  }
+  .add-url button:hover { background: #2563eb; }
+  .add-url button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* MAIN */
+  .main { flex: 1; display: flex; position: relative; overflow: hidden; }
+
+  /* SIDEBAR */
+  .sidebar {
+    width: 240px;
+    background: #0d0d0f;
+    border-right: 1px solid #1a1a1c;
+    overflow-y: auto;
+    flex-shrink: 0;
+    padding: 12px 0;
+  }
+  .sidebar h3 {
+    font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 0.8px;
+    padding: 10px 16px 6px; font-weight: 600;
+  }
+  .board-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 16px; cursor: pointer;
+    color: #b0b0b0; font-size: 13px;
+  }
+  .board-item:hover { background: #18181b; color: #fff; }
+  .board-item.active { background: #18181b; color: #fff; border-left: 2px solid #3b82f6; padding-left: 14px; }
+  .board-item .count { margin-left: auto; color: #555; font-size: 11px; }
+  .board-item.child { padding-left: 32px; }
+  .board-item.child.deep { padding-left: 48px; }
+  .board-chevron { width: 12px; color: #555; font-size: 9px; display: inline-block; cursor: pointer; transition: transform .15s; }
+  .board-chevron.expanded { transform: rotate(90deg); }
+  .sidebar-add-board {
+    margin: 10px 16px; padding: 7px 10px;
+    background: #18181b; border: 1px dashed #27272a;
+    border-radius: 6px; color: #666; font-size: 12px;
+    cursor: pointer; text-align: center;
+  }
+  .sidebar-add-board:hover { color: #fff; border-color: #3b82f6; }
+
+  /* CANVAS */
+  .canvas {
+    flex: 1; overflow: auto; padding: 30px;
+    background: #0a0a0b;
+    background-image: radial-gradient(circle, #1a1a1d 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+  .canvas h1 { font-size: 22px; margin-bottom: 6px; }
+  .canvas .desc { color: #666; font-size: 13px; margin-bottom: 24px; }
+
+  .video-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 18px;
+  }
+  .video-card {
+    background: #18181b;
+    border: 1px solid #27272a;
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .video-card:hover { border-color: #3b82f6; transform: translateY(-2px); }
+  .video-thumb {
+    width: 100%; aspect-ratio: 16/9;
+    background: linear-gradient(135deg, #2a2a2e, #3a3a3e);
+    display: flex; align-items: center; justify-content: center;
+    position: relative; overflow: hidden;
+  }
+  .video-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .video-thumb .placeholder { font-size: 40px; color: #666; }
+  .video-duration {
+    position: absolute; bottom: 8px; right: 8px;
+    background: rgba(0,0,0,.85); color: #fff;
+    font-size: 11px; padding: 2px 6px; border-radius: 3px;
+  }
+  .video-status {
+    position: absolute; top: 8px; left: 8px;
+    background: rgba(59, 130, 246, 0.9); color: #fff;
+    font-size: 10px; padding: 3px 8px; border-radius: 10px;
+    text-transform: uppercase; letter-spacing: 0.3px;
+    font-weight: 500;
+  }
+  .video-status.ready { background: rgba(34, 197, 94, 0.9); }
+  .video-status.error { background: rgba(239, 68, 68, 0.9); }
+  .video-body { padding: 10px 12px; }
+  .video-title {
+    font-size: 13px; color: #fff; font-weight: 500;
+    line-height: 1.4; margin-bottom: 6px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .video-meta { font-size: 11px; color: #666; }
+  .video-actions {
+    display: flex; gap: 4px; margin-top: 6px; align-items: center;
+  }
+  .move-btn {
+    background: #0a0a0b; border: 1px solid #27272a;
+    color: #888; font-size: 10px; padding: 3px 8px;
+    border-radius: 4px; cursor: pointer;
+  }
+  .move-btn:hover { color: #fff; border-color: #3b82f6; }
+
+  .empty-state {
+    text-align: center; padding: 80px 20px; color: #555;
+  }
+  .empty-state h2 { font-size: 18px; color: #888; margin-bottom: 8px; }
+  .empty-state p { font-size: 13px; }
+
+  /* DETAIL MODAL */
+  .modal-bg {
+    position: fixed; inset: 0; background: rgba(0,0,0,.8);
+    display: none; align-items: center; justify-content: center;
+    z-index: 100; padding: 20px;
+  }
+  .modal-bg.open { display: flex; }
+  .modal {
+    background: #101012;
+    border: 1px solid #27272a;
+    border-radius: 14px;
+    width: calc(100vw - 40px);
+    max-width: 1600px;
+    height: calc(100vh - 40px);
+    max-height: 92vh;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: 1.4fr 380px 380px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.6);
+  }
+  @media (max-width: 1400px) {
+    .modal { grid-template-columns: 1.4fr 360px; }
+    .modal-ai { display: none; }
+  }
+  .modal-left {
+    background: #000;
+    display: flex;
+    flex-direction: column;
+    min-height: 500px;
+    position: relative;
+  }
+  .modal-video {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    min-height: 300px;
+  }
+  .modal-video video { width: 100%; height: 100%; max-height: 60vh; object-fit: contain; }
+  .modal-video .placeholder { color: #333; font-size: 60px; }
+  .close-btn {
+    position: absolute; top: 14px; right: 14px;
+    background: rgba(0,0,0,.6); border: 1px solid #27272a;
+    color: #fff; width: 32px; height: 32px; border-radius: 50%;
+    cursor: pointer; font-size: 16px; z-index: 10;
+  }
+  .close-btn:hover { background: rgba(0,0,0,.8); }
+
+  .timeline {
+    background: #0a0a0b;
+    border-top: 1px solid #1a1a1c;
+    padding: 12px;
+    max-height: 180px;
+    overflow-y: auto;
+  }
+  .timeline-label {
+    font-size: 10px; color: #666; text-transform: uppercase;
+    letter-spacing: 0.5px; margin-bottom: 8px;
+  }
+  .frames-row {
+    display: flex; gap: 4px; overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .frames-row::-webkit-scrollbar { height: 6px; }
+  .frames-row::-webkit-scrollbar-thumb { background: #27272a; border-radius: 3px; }
+  .frame-thumb {
+    min-width: 90px; height: 52px;
+    border-radius: 4px; overflow: hidden;
+    cursor: pointer; position: relative;
+    border: 2px solid transparent;
+    flex-shrink: 0;
+  }
+  .frame-thumb:hover { border-color: #3b82f6; }
+  .frame-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .frame-thumb .sec {
+    position: absolute; bottom: 2px; right: 2px;
+    background: rgba(0,0,0,.8); color: #fff;
+    font-size: 9px; padding: 1px 4px; border-radius: 2px;
+    font-family: Monaco, monospace;
+  }
+
+  .modal-right {
+    padding: 24px 26px;
+    overflow-y: auto;
+    max-height: 92vh;
+    border-left: 1px solid #1a1a1c;
+  }
+  .modal-title {
+    font-size: 18px; font-weight: 600; margin-bottom: 6px;
+    line-height: 1.3;
+  }
+  .modal-meta {
+    color: #666; font-size: 12px; margin-bottom: 20px;
+    display: flex; gap: 10px; flex-wrap: wrap;
+  }
+  .modal-meta span { display: flex; align-items: center; gap: 4px; }
+
+  .status-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 500;
+    margin-bottom: 18px;
+  }
+  .status-badge.pending { background: #1e2937; color: #60a5fa; }
+  .status-badge.downloading { background: #1e2937; color: #60a5fa; }
+  .status-badge.extracting_frames { background: #2a1f3d; color: #a78bfa; }
+  .status-badge.extracting_audio { background: #2a1f3d; color: #a78bfa; }
+  .status-badge.transcribing { background: #3d2f1a; color: #fbbf24; }
+  .status-badge.ready { background: #14321e; color: #4ade80; }
+  .status-badge.error { background: #3d1a1a; color: #f87171; }
+  .status-badge.queued { background: #262629; color: #999; }
+
+  .field {
+    margin-bottom: 16px;
+  }
+  .field-label {
+    font-size: 10px; color: #555; text-transform: uppercase;
+    letter-spacing: 0.8px; font-weight: 600; margin-bottom: 6px;
+  }
+  .field-value { font-size: 13px; color: #d0d0d0; line-height: 1.5; }
+
+  .transcript-box {
+    background: #0a0a0b;
+    border: 1px solid #1a1a1c;
+    border-radius: 6px;
+    padding: 12px;
+    max-height: 300px;
+    overflow-y: auto;
+    font-size: 12px;
+    line-height: 1.7;
+  }
+  .transcript-line {
+    display: flex;
+    gap: 10px;
+    padding: 3px 0;
+    cursor: pointer;
+    border-radius: 3px;
+    padding-left: 4px;
+  }
+  .transcript-line:hover { background: #15151a; }
+  .transcript-line .ts {
+    color: #3b82f6; font-family: Monaco, monospace;
+    font-size: 10px; min-width: 44px;
+  }
+  .transcript-line .txt { color: #c0c0c0; flex: 1; }
+
+  /* AI PANEL */
+  .modal-ai {
+    background: #0a0a0b;
+    border-left: 1px solid #1a1a1c;
+    display: flex;
+    flex-direction: column;
+    max-height: 92vh;
+  }
+  .ai-head { padding: 14px 16px; border-bottom: 1px solid #1a1a1c; display: flex; align-items: center; gap: 8px; }
+  .ai-dot { width: 8px; height: 8px; background: #22c55e; border-radius: 50%; }
+  .ai-name { font-size: 13px; font-weight: 600; }
+  .ai-sub { font-size: 10px; color: #555; margin-top: 2px; }
+  .ai-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .ai-msg { font-size: 12px; line-height: 1.55; }
+  .ai-msg.ai { color: #d0d0d0; padding: 8px 0; }
+  .ai-msg.user { background: #18181b; padding: 9px 12px; border-radius: 10px; color: #fff; align-self: flex-end; max-width: 85%; }
+  .ai-tool { background: #0f1f10; border: 1px solid #1a3a1a; padding: 7px 10px; border-radius: 6px; font-family: Monaco, monospace; font-size: 10px; color: #8ad9a0; }
+  .ai-input-wrap { padding: 12px; border-top: 1px solid #1a1a1c; }
+  .ai-input-box { background: #18181b; border: 1px solid #27272a; border-radius: 8px; padding: 8px 10px; }
+  .ai-input-box input { width: 100%; background: none; border: none; outline: none; color: #fff; font-size: 12px; }
+  .ai-quick { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .quick-btn { font-size: 10px; padding: 4px 8px; background: #18181b; border: 1px solid #27272a; color: #aaa; border-radius: 12px; cursor: pointer; }
+  .quick-btn:hover { background: #27272a; color: #fff; }
+
+  .spinner {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid #27272a;
+    border-top-color: #3b82f6;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">🎬 Video Factory <span class="muted">— decomposer</span></div>
+  <div class="topbar-spacer"></div>
+  <div class="add-url">
+    <input id="urlInput" placeholder="Вставь YouTube ссылку..." />
+    <button id="addBtn" onclick="addVideo()">+ Добавить</button>
+  </div>
+</div>
+
+<div class="main">
+  <div class="sidebar">
+    <h3>Доски</h3>
+    <div id="boardsList"></div>
+    <div class="sidebar-add-board" onclick="createBoardPrompt()">+ Новая доска</div>
+  </div>
+
+  <div class="canvas">
+    <h1 id="boardTitle">📥 Inbox</h1>
+    <p class="desc" id="boardDesc">Сюда попадают все новые видео. Вставь ссылку YouTube сверху.</p>
+    <div class="video-grid" id="videoGrid"></div>
+  </div>
+</div>
+
+<!-- DETAIL MODAL -->
+<div class="modal-bg" id="modal" onclick="if(event.target===this) closeModal()">
+  <div class="modal">
+    <div class="modal-left">
+      <button class="close-btn" onclick="closeModal()">×</button>
+      <div class="modal-video" id="modalVideo">
+        <span class="placeholder">🎬</span>
+      </div>
+      <div class="timeline">
+        <div class="timeline-label">📸 Раскадровка (1 кадр / сек) — клик для перехода</div>
+        <div class="frames-row" id="framesRow"></div>
+      </div>
+    </div>
+    <div class="modal-right" id="modalRight"></div>
+    <div class="modal-ai">
+      <div class="ai-head">
+        <div class="ai-dot"></div>
+        <div>
+          <div class="ai-name">AI Assistant</div>
+          <div class="ai-sub">видит кадры + транскрипцию</div>
+        </div>
+      </div>
+      <div class="ai-body" id="aiBody">
+        <div class="ai-msg ai">Привет. Я вижу текущий клип — все кадры и транскрипцию. Задавай вопросы или проси что-то сделать.</div>
+      </div>
+      <div class="ai-input-wrap">
+        <div class="ai-input-box">
+          <input id="aiInput" placeholder="Спроси что-нибудь..." onkeydown="if(event.key==='Enter')sendAI()" />
+        </div>
+        <div class="ai-quick">
+          <div class="quick-btn" onclick="runDescribeFrames()">🖼️ Описать все кадры</div>
+          <div class="quick-btn" onclick="runHighlights()">🔥 Highlights</div>
+          <div class="quick-btn" onclick="askAI('опиши что происходит в видео в 3 предложениях')">📝 Резюме</div>
+          <div class="quick-btn" onclick="askAI('придумай 5 вирусных хуков для tiktok из этого видео')">🎬 Хуки</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = 'http://127.0.0.1:8765/api';
+const DATA_URL = 'http://127.0.0.1:8765/data';
+
+let state = {
+  boards: [],
+  currentBoardId: null,
+  videos: [],
+};
+
+async function loadBoards() {
+  const res = await fetch(API + '/boards');
+  state.boards = await res.json();
+
+  // Count videos per board
+  const allVideos = await (await fetch(API + '/videos')).json();
+  const countByBoard = {};
+  allVideos.forEach(v => {
+    countByBoard[v.board_id] = (countByBoard[v.board_id] || 0) + 1;
+  });
+
+  // Build tree by parent_id
+  const children = {};
+  const roots = [];
+  state.boards.forEach(b => {
+    if (b.parent_id) {
+      (children[b.parent_id] = children[b.parent_id] || []).push(b);
+    } else {
+      roots.push(b);
+    }
+  });
+
+  const list = document.getElementById('boardsList');
+  list.innerHTML = '';
+
+  function renderNode(b, depth) {
+    const hasChildren = (children[b.id] || []).length > 0;
+    const expanded = state.expandedBoards?.has(b.id);
+    const className = 'board-item' + (b.id === state.currentBoardId ? ' active' : '') +
+                      (depth >= 1 ? ' child' : '') + (depth >= 2 ? ' deep' : '');
+    const safeName = b.name.replace(/'/g, "\\'");
+    const chevron = hasChildren
+      ? `<span class="board-chevron${expanded ? ' expanded' : ''}" onclick="event.stopPropagation(); toggleBoard(${b.id})">▶</span>`
+      : `<span class="board-chevron" style="opacity:0">▶</span>`;
+    const html = `
+      <div class="${className}"
+           oncontextmenu="event.preventDefault(); createSubBoardPrompt(${b.id}); return false;"
+           onclick="selectBoard(${b.id}, '${safeName}', '${b.emoji}')">
+        ${chevron}
+        <span>${b.emoji}</span>
+        <span>${b.name}</span>
+        <span class="count">${countByBoard[b.id] || 0}</span>
+      </div>
+    `;
+    list.insertAdjacentHTML('beforeend', html);
+    if (hasChildren && expanded) {
+      children[b.id].forEach(c => renderNode(c, depth + 1));
+    }
+  }
+
+  if (!state.expandedBoards) state.expandedBoards = new Set();
+  roots.forEach(b => renderNode(b, 0));
+
+  if (state.currentBoardId === null && state.boards.length > 0) {
+    const first = state.boards[0];
+    selectBoard(first.id, first.name, first.emoji);
+  }
+}
+
+function toggleBoard(id) {
+  if (!state.expandedBoards) state.expandedBoards = new Set();
+  if (state.expandedBoards.has(id)) state.expandedBoards.delete(id);
+  else state.expandedBoards.add(id);
+  loadBoards();
+}
+
+async function createBoardPrompt() {
+  const name = prompt('Название доски:');
+  if (!name) return;
+  const emoji = prompt('Эмодзи (оставь пусто для 🎬):', '🎬') || '🎬';
+  await fetch(API + '/boards', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name, emoji, parent_id: null}),
+  });
+  await loadBoards();
+}
+
+async function createSubBoardPrompt(parentId) {
+  const name = prompt('Название под-доски:');
+  if (!name) return;
+  const emoji = prompt('Эмодзи (оставь пусто для 🎬):', '🎬') || '🎬';
+  await fetch(API + '/boards', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name, emoji, parent_id: parentId}),
+  });
+  if (!state.expandedBoards) state.expandedBoards = new Set();
+  state.expandedBoards.add(parentId);
+  await loadBoards();
+}
+
+async function selectBoard(id, name, emoji) {
+  state.currentBoardId = id;
+  document.getElementById('boardTitle').textContent = `${emoji} ${name}`;
+  await loadBoards();
+  await loadVideos();
+}
+
+async function loadVideos() {
+  if (state.currentBoardId === null) return;
+  const res = await fetch(API + '/videos?board_id=' + state.currentBoardId);
+  state.videos = await res.json();
+  renderVideos();
+}
+
+function renderVideos() {
+  const grid = document.getElementById('videoGrid');
+  if (state.videos.length === 0) {
+    grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><h2>Пусто</h2><p>Добавь YouTube ссылку сверху чтобы начать</p></div>';
+    return;
+  }
+  grid.innerHTML = state.videos.map(v => {
+    const dur = v.duration_sec ? formatDuration(v.duration_sec) : '';
+    const title = v.title || '(loading...)';
+    const channel = v.channel || '';
+    const status = (v.status || 'pending').split(':')[0];
+    const statusLabel = {
+      pending: 'pending',
+      queued: 'queued',
+      downloading: '⬇ downloading',
+      extracting_frames: '📸 frames',
+      extracting_audio: '🔊 audio',
+      transcribing: '💬 transcribing',
+      ready: '✓ ready',
+      error: '✕ error',
+    }[status] || status;
+    const thumbStyle = v.local_path
+      ? `background-image: url('${DATA_URL}/frames/${v.id}/frame_0001.jpg'); background-size: cover; background-position: center;`
+      : '';
+    return `
+      <div class="video-card">
+        <div class="video-thumb" style="${thumbStyle}" onclick="openDetail(${v.id})">
+          ${!v.local_path ? '<span class="placeholder">🎬</span>' : ''}
+          <span class="video-status ${status}">${statusLabel}</span>
+          ${dur ? `<span class="video-duration">${dur}</span>` : ''}
+        </div>
+        <div class="video-body" onclick="openDetail(${v.id})">
+          <div class="video-title">${escapeHtml(title)}</div>
+          <div class="video-meta">${escapeHtml(channel)}</div>
+          <div class="video-actions">
+            <button class="move-btn" onclick="event.stopPropagation(); moveVideo(${v.id})">↪ Переместить</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function formatDuration(sec) {
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function escapeHtml(str) {
+  return (str || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function moveVideo(videoId) {
+  const options = state.boards.map((b, i) => `${i+1}) ${b.emoji} ${b.name}`).join('\n');
+  const choice = prompt(`Куда переместить видео?\n\n${options}\n\nВведи номер:`);
+  if (!choice) return;
+  const idx = parseInt(choice) - 1;
+  if (isNaN(idx) || idx < 0 || idx >= state.boards.length) return;
+  const target = state.boards[idx];
+  await fetch(API + '/videos/' + videoId + '/move', {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({board_id: target.id}),
+  });
+  await loadBoards();
+  await loadVideos();
+}
+
+async function addVideo() {
+  const input = document.getElementById('urlInput');
+  const url = input.value.trim();
+  if (!url) return;
+  const btn = document.getElementById('addBtn');
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    await fetch(API + '/videos', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url, board_id: state.currentBoardId}),
+    });
+    input.value = '';
+    await loadVideos();
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = '+ Добавить';
+}
+
+async function openDetail(videoId) {
+  const modal = document.getElementById('modal');
+  modal.classList.add('open');
+  await renderDetail(videoId);
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('open');
+  // Stop video playback
+  const vid = document.querySelector('#modalVideo video');
+  if (vid) vid.pause();
+}
+
+async function renderDetail(videoId) {
+  const res = await fetch(API + '/videos/' + videoId);
+  const data = await res.json();
+  const v = data.video;
+  const frames = data.frames || [];
+  const transcripts = data.transcripts || [];
+
+  // LEFT: video player
+  const left = document.getElementById('modalVideo');
+  if (v.local_path && v.status === 'ready') {
+    const relPath = v.local_path.split('/data/')[1];
+    left.innerHTML = `<video controls src="${DATA_URL}/${relPath}"></video>`;
+  } else {
+    left.innerHTML = `<div style="text-align:center"><div class="spinner"></div><div style="color:#666;font-size:12px;margin-top:10px">${v.status}</div></div>`;
+  }
+
+  // Frames row
+  const framesRow = document.getElementById('framesRow');
+  if (frames.length === 0) {
+    framesRow.innerHTML = '<div style="color:#555;font-size:11px;padding:10px">Раскадровка ещё не готова...</div>';
+  } else {
+    framesRow.innerHTML = frames.map(f => {
+      const rel = f.thumbnail_path.split('/data/')[1];
+      return `
+        <div class="frame-thumb" onclick="seekTo(${f.second})">
+          <img src="${DATA_URL}/${rel}" alt="frame ${f.second}" />
+          <span class="sec">${f.second}s</span>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // RIGHT: metadata + transcription
+  const right = document.getElementById('modalRight');
+  const dur = v.duration_sec ? formatDuration(v.duration_sec) : '?';
+  const views = v.view_count ? v.view_count.toLocaleString() : '?';
+  const status = (v.status || 'pending').split(':')[0];
+
+  let transcriptHtml = '';
+  if (transcripts.length > 0) {
+    transcriptHtml = transcripts.map(t => `
+      <div class="transcript-line" onclick="seekTo(${t.start_sec})">
+        <span class="ts">${formatDuration(t.start_sec)}</span>
+        <span class="txt">${escapeHtml(t.text)}</span>
+      </div>
+    `).join('');
+  } else if (status === 'transcribing') {
+    transcriptHtml = '<div style="color:#666;font-size:12px;padding:10px"><span class="spinner"></span>Транскрипция в процессе...</div>';
+  } else if (status === 'ready') {
+    transcriptHtml = '<div style="color:#666;font-size:12px;padding:10px">Транскрипция недоступна (нет речи или ошибка)</div>';
+  } else {
+    transcriptHtml = '<div style="color:#666;font-size:12px;padding:10px">Ожидание обработки...</div>';
+  }
+
+  right.innerHTML = `
+    <div class="modal-title">${escapeHtml(v.title || '(loading...)')}</div>
+    <div class="modal-meta">
+      <span>📺 ${escapeHtml(v.channel || '?')}</span>
+      <span>⏱ ${dur}</span>
+      <span>👁 ${views}</span>
+      <span>📸 ${frames.length} кадров</span>
+      <span>💬 ${transcripts.length} сегментов</span>
+    </div>
+    <div class="status-badge ${status}">${status}</div>
+
+    <div class="field">
+      <div class="field-label">YouTube URL</div>
+      <div class="field-value"><a href="${v.youtube_url}" target="_blank" style="color:#60a5fa">${v.youtube_url}</a></div>
+    </div>
+
+    <div class="field">
+      <div class="field-label">Транскрипция (Whisper)</div>
+      <div class="transcript-box">${transcriptHtml}</div>
+    </div>
+
+    <div class="field">
+      <div class="field-label">Raw data</div>
+      <div class="field-value" style="font-size:11px;color:#555;font-family:Monaco,monospace">
+        id: ${v.id} · board: ${v.board_id} · path: ${v.local_path || '(none)'}
+      </div>
+    </div>
+  `;
+}
+
+function seekTo(sec) {
+  const vid = document.querySelector('#modalVideo video');
+  if (vid) {
+    vid.currentTime = sec;
+    vid.play();
+  }
+}
+
+// Auto-refresh every 3 seconds while modal is open or while any video is processing
+setInterval(async () => {
+  await loadVideos();
+  const modal = document.getElementById('modal');
+  if (modal.classList.contains('open')) {
+    // find currently opened video id from modalRight
+    const meta = document.querySelector('.modal-meta');
+    if (!meta) return;
+    // re-render from state
+    const processingVideo = state.videos.find(v => v.status !== 'ready' && v.status !== 'error' && !v.status?.startsWith('error'));
+    // can't easily get current modal video id — skip auto-refresh for modal
+  }
+}, 3000);
+
+// Enter key to add
+document.getElementById('urlInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') addVideo();
+});
+
+// === AI CHAT ===
+let currentVideoId = null;
+
+const origOpenDetail = openDetail;
+openDetail = async function(videoId) {
+  currentVideoId = videoId;
+  const modal = document.getElementById('modal');
+  modal.classList.add('open');
+  await renderDetail(videoId);
+  // reset ai chat
+  document.getElementById('aiBody').innerHTML =
+    '<div class="ai-msg ai">Я вижу этот клип — все ' + (window._currentFrames || 0) + ' кадров и транскрипцию. Спрашивай.</div>';
+};
+
+async function askAI(text) {
+  document.getElementById('aiInput').value = text;
+  await sendAI();
+}
+
+async function runDescribeFrames() {
+  if (!currentVideoId) return;
+  const body = document.getElementById('aiBody');
+  const thinking = document.createElement('div');
+  thinking.className = 'ai-msg ai';
+  thinking.innerHTML = '<span class="spinner"></span>Описываю все кадры (может занять 1-3 мин)...';
+  body.appendChild(thinking);
+  body.scrollTop = body.scrollHeight;
+  try {
+    const res = await fetch(API + '/ai/describe_frames/' + currentVideoId, {method: 'POST'});
+    const data = await res.json();
+    thinking.remove();
+    const msg = document.createElement('div');
+    msg.className = 'ai-msg ai';
+    msg.innerHTML = `✅ Описано ${data.described || 0} из ${data.total_frames || 0} кадров. Теперь AI отвечает быстрее и точнее.`;
+    body.appendChild(msg);
+    body.scrollTop = body.scrollHeight;
+    await renderDetail(currentVideoId);
+  } catch (e) {
+    thinking.remove();
+    const err = document.createElement('div');
+    err.className = 'ai-msg ai';
+    err.style.color = '#f87171';
+    err.textContent = 'Ошибка: ' + e.message;
+    body.appendChild(err);
+  }
+}
+
+async function runHighlights() {
+  if (!currentVideoId) return;
+  const body = document.getElementById('aiBody');
+  const thinking = document.createElement('div');
+  thinking.className = 'ai-msg ai';
+  thinking.innerHTML = '<span class="spinner"></span>Ищу самые интересные моменты...';
+  body.appendChild(thinking);
+  body.scrollTop = body.scrollHeight;
+  try {
+    const res = await fetch(API + '/ai/highlights/' + currentVideoId, {method: 'POST'});
+    const data = await res.json();
+    thinking.remove();
+    const msg = document.createElement('div');
+    msg.className = 'ai-msg ai';
+    msg.innerHTML = (data.highlights || data.error || '(пусто)').replace(/\n/g, '<br>');
+    body.appendChild(msg);
+    body.scrollTop = body.scrollHeight;
+  } catch (e) {
+    thinking.remove();
+    const err = document.createElement('div');
+    err.className = 'ai-msg ai';
+    err.style.color = '#f87171';
+    err.textContent = 'Ошибка: ' + e.message;
+    body.appendChild(err);
+  }
+}
+
+async function sendAI() {
+  const input = document.getElementById('aiInput');
+  const text = input.value.trim();
+  if (!text || !currentVideoId) return;
+  const body = document.getElementById('aiBody');
+
+  // Add user msg
+  const userDiv = document.createElement('div');
+  userDiv.className = 'ai-msg user';
+  userDiv.textContent = text;
+  body.appendChild(userDiv);
+  input.value = '';
+
+  // Add thinking
+  const thinking = document.createElement('div');
+  thinking.className = 'ai-msg ai';
+  thinking.innerHTML = '<span class="spinner"></span>думаю...';
+  body.appendChild(thinking);
+  body.scrollTop = body.scrollHeight;
+
+  try {
+    const res = await fetch(API + '/ai/ask', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({video_id: currentVideoId, question: text}),
+    });
+    const data = await res.json();
+    thinking.remove();
+    const aiDiv = document.createElement('div');
+    aiDiv.className = 'ai-msg ai';
+    aiDiv.innerHTML = (data.answer || data.error || '(пусто)').replace(/\n/g, '<br>');
+    body.appendChild(aiDiv);
+    body.scrollTop = body.scrollHeight;
+  } catch (e) {
+    thinking.remove();
+    const errDiv = document.createElement('div');
+    errDiv.className = 'ai-msg ai';
+    errDiv.style.color = '#f87171';
+    errDiv.textContent = 'Ошибка: ' + e.message;
+    body.appendChild(errDiv);
+  }
+}
+
+// Track current frames count for AI context
+const origRenderDetail = renderDetail;
+renderDetail = async function(videoId) {
+  await origRenderDetail(videoId);
+  const res = await fetch(API + '/videos/' + videoId);
+  const d = await res.json();
+  window._currentFrames = (d.frames || []).length;
+};
+
+loadBoards();
+</script>
+</body>
+</html>
