@@ -54,13 +54,47 @@ video-factory/
 ├── backend/
 │   ├── app.py         # FastAPI сервер
 │   ├── db.py          # SQLite модели
-│   ├── pipeline.py    # yt-dlp → ffmpeg → whisper
-│   └── ai.py          # Claude CLI интеграция
+│   ├── pipeline.py    # yt-dlp → ffmpeg → whisper + remix engine
+│   ├── ai.py          # Claude CLI интеграция
+│   └── trending.py    # YouTube search через yt-dlp
 ├── frontend/
 │   └── index.html     # Весь UI в одном файле
+├── mcp_server.py      # MCP сервер для AI агентов
 └── data/              # (gitignored) видео, кадры, база
     ├── videos/
     ├── frames/
     ├── audio/
+    ├── clips/
+    ├── remixes/
     └── factory.db
 ```
+
+## MCP сервер
+
+Файл `mcp_server.py` экспортирует 18 инструментов через Model Context Protocol — любой MCP-совместимый агент (Claude Code, кастомные боты) может управлять Video Factory.
+
+**Установка для Claude Code:**
+
+Добавить в `mcp-config.json`:
+```json
+{
+  "mcpServers": {
+    "video-factory": {
+      "command": "/opt/homebrew/bin/python3",
+      "args": ["/path/to/video-factory/mcp_server.py"],
+      "env": {"VIDEO_FACTORY_URL": "http://127.0.0.1:8765/api"}
+    }
+  }
+}
+```
+
+**Доступные tools:**
+- `vf_list_boards`, `vf_create_board`, `vf_delete_board`
+- `vf_list_videos`, `vf_get_video`, `vf_add_video`, `vf_bulk_import`, `vf_move_video`
+- `vf_search` — full-text по описаниям кадров и транскриптам
+- `vf_trending` — поиск trending YouTube видео
+- `vf_ask_video`, `vf_extract_highlights`, `vf_describe_frames` — AI анализ
+- `vf_create_clip`, `vf_list_clips`, `vf_create_remix`, `vf_list_remixes`
+- `vf_director` — автономный AI агент для multi-step пайплайнов
+
+**Зависимость:** `pip install mcp` (Python 3.10+).
