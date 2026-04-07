@@ -257,6 +257,41 @@ async def list_tools() -> list[Tool]:
                 "required": ["instruction"],
             },
         ),
+        Tool(
+            name="vf_tts_voices",
+            description="List available English TTS voices from Kokoro. Returns voice IDs and their descriptions.",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="vf_generate_voice",
+            description="Generate an English voiceover WAV from text using local Kokoro TTS. ENGLISH ONLY. Returns path to WAV. Use for standalone narration, hooks, TTS audio files.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "English text to speak"},
+                    "voice": {"type": "string", "description": "Voice ID (default: af_sarah). Use vf_tts_voices to list.", "default": "af_sarah"},
+                    "speed": {"type": "number", "description": "Playback speed (1.0 = normal)", "default": 1.0},
+                    "out_path": {"type": ["string", "null"], "description": "Optional output path. If null, uses /tmp/vf_tts_*.wav"},
+                },
+                "required": ["text"],
+            },
+        ),
+        Tool(
+            name="vf_add_voiceover",
+            description="Generate a voiceover and mix it into an existing remix video. Modifies remix output_path to the new version with voice. Use to add narration/hook to a built remix.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "remix_id": {"type": "integer", "description": "ID of existing remix with rendered output"},
+                    "text": {"type": "string", "description": "Text to voiceover (English only)"},
+                    "voice": {"type": "string", "default": "af_sarah"},
+                    "mode": {"type": "string", "enum": ["overlay", "replace", "mute"], "default": "overlay", "description": "overlay=voice+bg audio, replace=voice only, mute=voice over silent video"},
+                    "volume": {"type": "number", "default": 1.0},
+                    "bg_volume": {"type": "number", "default": 0.3, "description": "Background audio volume for overlay mode"},
+                },
+                "required": ["remix_id", "text"],
+            },
+        ),
     ]
 
 
@@ -357,6 +392,27 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         elif name == "vf_director":
             result = await _async_call("POST", "/ai/director", body={
                 "instruction": arguments["instruction"],
+            })
+
+        elif name == "vf_tts_voices":
+            result = await _async_call("GET", "/tts/voices")
+
+        elif name == "vf_generate_voice":
+            result = await _async_call("POST", "/tts", body={
+                "text": arguments["text"],
+                "voice": arguments.get("voice", "af_sarah"),
+                "speed": arguments.get("speed", 1.0),
+                "out_path": arguments.get("out_path"),
+            })
+
+        elif name == "vf_add_voiceover":
+            rid = arguments["remix_id"]
+            result = await _async_call("POST", f"/remixes/{rid}/add_voiceover", body={
+                "text": arguments["text"],
+                "voice": arguments.get("voice", "af_sarah"),
+                "mode": arguments.get("mode", "overlay"),
+                "volume": arguments.get("volume", 1.0),
+                "bg_volume": arguments.get("bg_volume", 0.3),
             })
 
         else:

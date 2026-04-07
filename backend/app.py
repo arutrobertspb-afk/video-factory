@@ -329,6 +329,21 @@ class DirectorIn(BaseModel):
     instruction: str
 
 
+class TTSIn(BaseModel):
+    text: str
+    voice: str = "af_sarah"
+    speed: float = 1.0
+    out_path: Optional[str] = None
+
+
+class VoiceoverIn(BaseModel):
+    text: str
+    voice: str = "af_sarah"
+    mode: str = "overlay"  # replace | overlay | mute
+    volume: float = 1.0
+    bg_volume: float = 0.3
+
+
 @app.post("/api/ai/director")
 async def ai_director(body: DirectorIn):
     """Full autonomous pipeline: AI does everything by calling our own API."""
@@ -336,6 +351,58 @@ async def ai_director(body: DirectorIn):
     try:
         result = await ai.autonomous_pipeline(body.instruction)
         return {"result": result}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ── TTS ──
+@app.get("/api/tts/voices")
+def tts_voices():
+    import tts as _tts
+    return {"voices": _tts.VOICES, "default": "af_sarah"}
+
+
+@app.post("/api/tts")
+async def tts_generate(body: TTSIn):
+    """Generate a WAV from text. Returns path to wav."""
+    import tts as _tts
+    try:
+        path = await _tts.generate_voice(
+            text=body.text,
+            voice=body.voice,
+            speed=body.speed,
+            out_path=body.out_path,
+        )
+        return {"path": path}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/api/remixes/{remix_id}/add_voiceover")
+async def add_voiceover(remix_id: int, body: VoiceoverIn):
+    """Generate voiceover from text and mix into existing remix mp4."""
+    import tts as _tts
+    remix = db.get_remix(remix_id)
+    if not remix:
+        raise HTTPException(404, "remix not found")
+    if not remix.get("output_path") or not os.path.exists(remix["output_path"]):
+        raise HTTPException(400, "remix has no rendered output yet")
+
+    src = remix["output_path"]
+    out = src.replace(".mp4", "_voice.mp4")
+    try:
+        result_path = await _tts.add_voiceover_to_video(
+            video_path=src,
+            text=body.text,
+            out_path=out,
+            voice=body.voice,
+            mode=body.mode,
+            volume=body.volume,
+            bg_volume=body.bg_volume,
+        )
+        # Update the remix record to point at the new version
+        db.update_remix(remix_id, output_path=result_path)
+        return {"path": result_path}
     except Exception as e:
         return {"error": str(e)}
 
