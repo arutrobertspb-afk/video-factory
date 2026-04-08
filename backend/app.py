@@ -1,6 +1,7 @@
 """FastAPI server for Video Factory."""
 import os
 import asyncio
+import subprocess
 from typing import Optional
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, BackgroundTasks
@@ -125,12 +126,25 @@ def get_video(video_id: int):
 
 PARALLEL_LIMIT = 3  # max concurrent videos in pipeline
 _pipeline_sem = asyncio.Semaphore(PARALLEL_LIMIT)
+_active_tasks: set = set()  # track all async pipelines for /cancel_all
+
+
+def _track_task(coro, name="task"):
+    """Wrap asyncio.create_task and add to tracking set."""
+    t = asyncio.create_task(coro)
+    t.set_name(name)
+    _active_tasks.add(t)
+    t.add_done_callback(_active_tasks.discard)
+    return t
 
 
 async def _process_in_background(video_id, url):
     async with _pipeline_sem:
         try:
             await pipeline.process_video(video_id, url)
+        except asyncio.CancelledError:
+            db.update_video(video_id, status="cancelled")
+            raise
         except Exception as e:
             print(f"[pipeline] video {video_id} failed: {e}")
             db.update_video(video_id, status=f"error: {str(e)[:200]}")
@@ -147,7 +161,7 @@ async def post_video(v: VideoIn, background: BackgroundTasks):
 
     video_id = db.create_video(board_id, v.url, title="(loading...)", status="queued")
     # Run pipeline in background
-    asyncio.create_task(_process_in_background(video_id, v.url))
+    _track_task(_process_in_background(video_id, v.url), f"process_video_{video_id}")
     return {"id": video_id, "status": "queued"}
 
 
@@ -157,7 +171,7 @@ async def reparse_video(video_id: int):
     if not video:
         raise HTTPException(404)
     url = video["video"]["youtube_url"]
-    asyncio.create_task(_process_in_background(video_id, url))
+    _track_task(_process_in_background(video_id, url), f"process_video_{video_id}")
     return {"status": "reparsing"}
 
 
@@ -276,7 +290,7 @@ async def post_remix(body: RemixIn):
         _json.dumps(manual_clips),
         body.with_subtitles
     )
-    asyncio.create_task(_build_remix_bg(remix_id, manual_clips, body.with_subtitles))
+    _track_task(_build_remix_bg(remix_id, manual_clips, body.with_subtitles), f"remix_{remix_id}")
     return {"id": remix_id, "status": "queued"}
 
 
@@ -295,7 +309,7 @@ async def bulk_import(body: BulkImportIn):
         if not url:
             continue
         vid = db.create_video(board_id, url, title="(queued)", status="queued")
-        asyncio.create_task(_process_in_background(vid, url))
+        _track_task(_process_in_background(vid, url), f"process_video_{vid}")
         created.append(vid)
     return {"queued": len(created), "ids": created}
 
@@ -342,6 +356,62 @@ class VoiceoverIn(BaseModel):
     mode: str = "overlay"  # replace | overlay | mute
     volume: float = 1.0
     bg_volume: float = 0.3
+
+
+@app.get("/api/config")
+def get_config():
+    """Get current pipeline config."""
+    return pipeline.load_pipeline_config()
+
+
+@app.post("/api/config")
+def update_config(body: dict):
+    """Update pipeline config. Partial updates supported."""
+    cfg = pipeline.load_pipeline_config()
+    cfg.update(body)
+    pipeline.save_pipeline_config(cfg)
+    return {"updated": True, "config": cfg}
+
+
+@app.post("/api/cancel_all")
+async def cancel_all():
+    """Cancel all in-flight background tasks (video pipelines, remixes).
+    Called by /stop command in Telegram bot to immediately kill VF work.
+    Also kills yt-dlp, ffmpeg, whisper subprocesses owned by this process."""
+    import signal
+    import psutil as _ps  # optional, fall back to os.kill
+
+    cancelled = []
+    for t in list(_active_tasks):
+        if not t.done():
+            name = t.get_name()
+            t.cancel()
+            cancelled.append(name)
+
+    # Also kill any media subprocesses that this process spawned
+    killed_children = 0
+    try:
+        import os as _os
+        my_pid = _os.getpid()
+        result = subprocess.run(
+            ["pgrep", "-P", str(my_pid)],
+            capture_output=True, text=True,
+        )
+        for pid in result.stdout.strip().split("\n"):
+            pid = pid.strip()
+            if pid:
+                try:
+                    _os.kill(int(pid), signal.SIGKILL)
+                    killed_children += 1
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    return {
+        "cancelled_tasks": cancelled,
+        "killed_subprocesses": killed_children,
+    }
 
 
 @app.post("/api/ai/director")

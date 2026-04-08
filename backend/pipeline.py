@@ -16,6 +16,52 @@ REMIXES_DIR = DATA / "remixes"
 for d in (VIDEOS_DIR, FRAMES_DIR, AUDIO_DIR, CLIPS_DIR, REMIXES_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
+
+# ═══════════════════════════════════════════
+# PIPELINE CONFIG — per-video tuneable limits
+# ═══════════════════════════════════════════
+CONFIG_PATH = BASE / "pipeline_config.json"
+DEFAULT_CONFIG = {
+    # Hard limits to prevent runaway costs
+    "max_video_duration_sec": 900,        # 15 min max, None = unlimited
+    "skip_if_duration_over": 900,         # reject at metadata stage
+    # Frame extraction
+    "frame_fps_default": 1,               # 1 frame/sec for short videos
+    "frame_fps_long_video": 0.2,          # 1 frame / 5 sec for videos > 5 min
+    "long_video_threshold_sec": 300,      # videos > 5 min use frame_fps_long_video
+    "max_frames": 300,                    # NEVER extract more than this
+    # Auto vision tagging
+    "auto_tag_frames": False,             # DEFAULT OFF — opt-in per request
+    "auto_tag_max_frames": 30,            # if on, tag only first N frames
+    "auto_tag_model": "claude-haiku-4-5", # cheap model, not Sonnet
+    # Transcription
+    "whisper_model": "tiny",              # tiny is fast + cheap (local)
+    "skip_transcription": False,
+    # Cost logging
+    "log_costs": True,
+}
+
+
+def load_pipeline_config() -> dict:
+    """Load config from JSON file, fall back to defaults."""
+    cfg = dict(DEFAULT_CONFIG)
+    if CONFIG_PATH.exists():
+        try:
+            import json
+            with open(CONFIG_PATH) as f:
+                user_cfg = json.load(f)
+            cfg.update(user_cfg)
+        except Exception as e:
+            print(f"[pipeline_config] load failed: {e}, using defaults")
+    return cfg
+
+
+def save_pipeline_config(cfg: dict):
+    """Persist config to disk."""
+    import json
+    with open(CONFIG_PATH, "w") as f:
+        json.dump(cfg, f, indent=2)
+
 # Homebrew binary paths (not always on $PATH for GUI apps)
 YT_DLP = "/opt/homebrew/bin/yt-dlp"
 FFMPEG = "/opt/homebrew/bin/ffmpeg"
@@ -128,9 +174,17 @@ async def transcribe(video_id, audio_path, model="tiny"):
     ]
 
 
-async def process_video(video_id, url, progress_cb=None):
-    """Full pipeline: metadata → download → frames → audio → transcribe."""
+async def process_video(video_id, url, progress_cb=None, overrides: dict = None):
+    """Full pipeline: metadata → download → frames → audio → transcribe.
+
+    overrides: dict to override specific config keys for THIS video.
+        Example: {"auto_tag_frames": True, "max_frames": 60}
+    """
     import db
+
+    cfg = load_pipeline_config()
+    if overrides:
+        cfg.update(overrides)
 
     async def _progress(status):
         if progress_cb:
@@ -142,11 +196,27 @@ async def process_video(video_id, url, progress_cb=None):
     # Metadata
     await _progress("fetching_metadata")
     meta = await fetch_metadata(url)
+
+    # GUARD 1: reject if video too long
+    duration = meta.get("duration", 0) or 0
+    max_dur = cfg.get("skip_if_duration_over")
+    if max_dur and duration > max_dur:
+        db.update_video(
+            video_id,
+            title=meta["title"],
+            channel=meta["channel"],
+            duration_sec=duration,
+            view_count=meta["view_count"],
+            status=f"skipped: too long ({int(duration)}s > {max_dur}s limit)",
+        )
+        await _progress("skipped_too_long")
+        return {"skipped": True, "reason": "too_long", "duration": duration}
+
     db.update_video(
         video_id,
         title=meta["title"],
         channel=meta["channel"],
-        duration_sec=meta["duration"],
+        duration_sec=duration,
         view_count=meta["view_count"],
         status="downloading",
     )
@@ -156,11 +226,30 @@ async def process_video(video_id, url, progress_cb=None):
     video_path = await download_video(video_id, url)
     db.update_video(video_id, local_path=video_path, status="extracting_frames")
 
-    # Frames
+    # Frames — use fps based on video length
     await _progress("extracting_frames")
-    frames = await extract_frames(video_id, video_path, fps=1)
+    long_thresh = cfg.get("long_video_threshold_sec", 300)
+    if duration > long_thresh:
+        fps = cfg.get("frame_fps_long_video", 0.2)
+    else:
+        fps = cfg.get("frame_fps_default", 1)
+
+    frames = await extract_frames(video_id, video_path, fps=fps)
+
+    # GUARD 2: cap total frames
+    max_frames = cfg.get("max_frames", 300)
+    if max_frames and len(frames) > max_frames:
+        frames_trimmed = frames[:max_frames]
+        for extra in frames[max_frames:]:
+            try:
+                os.remove(extra)
+            except Exception:
+                pass
+        frames = frames_trimmed
+
     for idx, f_path in enumerate(frames):
-        db.add_frame(video_id, second=idx, thumbnail_path=f_path)
+        second = idx / fps if fps > 0 else idx
+        db.add_frame(video_id, second=second, thumbnail_path=f_path)
     db.update_video(video_id, status="extracting_audio")
 
     # Audio
@@ -169,33 +258,38 @@ async def process_video(video_id, url, progress_cb=None):
     db.update_video(video_id, status="transcribing")
 
     # Transcribe
-    await _progress("transcribing")
-    try:
-        segments = await transcribe(video_id, audio_path)
-        for seg in segments:
-            db.add_transcript(video_id, seg["start"], seg["end"], seg["text"])
-    except Exception as e:
-        print(f"[transcribe] failed for {video_id}: {e}")
+    if not cfg.get("skip_transcription", False):
+        await _progress("transcribing")
+        try:
+            whisper_model = cfg.get("whisper_model", "tiny")
+            segments = await transcribe(video_id, audio_path, model=whisper_model)
+            for seg in segments:
+                db.add_transcript(video_id, seg["start"], seg["end"], seg["text"])
+        except Exception as e:
+            print(f"[transcribe] failed for {video_id}: {e}")
 
-    # Auto vision tagging in background — don't block the pipeline
-    db.update_video(video_id, status="tagging_frames")
-    await _progress("tagging_frames")
-    try:
-        import ai
-        frame_rows = db.list_frames(video_id)
-        batch_size = 10
-        for i in range(0, len(frame_rows), batch_size):
-            batch = frame_rows[i:i+batch_size]
-            paths = [f["thumbnail_path"] for f in batch]
-            descriptions = await ai.describe_frames_batch(paths)
-            for frame, desc in zip(batch, descriptions):
-                db.update_frame_description(frame["id"], desc)
-    except Exception as e:
-        print(f"[auto-tag] failed for {video_id}: {e}")
+    # Auto vision tagging — OPT-IN, capped, cheaper model
+    if cfg.get("auto_tag_frames", False):
+        db.update_video(video_id, status="tagging_frames")
+        await _progress("tagging_frames")
+        try:
+            import ai
+            frame_rows = db.list_frames(video_id)
+            tag_limit = cfg.get("auto_tag_max_frames", 30)
+            frame_rows = frame_rows[:tag_limit]
+            batch_size = 10
+            for i in range(0, len(frame_rows), batch_size):
+                batch = frame_rows[i:i+batch_size]
+                paths = [f["thumbnail_path"] for f in batch]
+                descriptions = await ai.describe_frames_batch(paths)
+                for frame, desc in zip(batch, descriptions):
+                    db.update_frame_description(frame["id"], desc)
+        except Exception as e:
+            print(f"[auto-tag] failed for {video_id}: {e}")
 
     db.update_video(video_id, status="ready")
     await _progress("ready")
-    return {"frames": len(frames), "meta": meta}
+    return {"frames": len(frames), "meta": meta, "cfg_used": cfg}
 
 
 async def cut_clip(video_path, start_sec, end_sec, out_path):
